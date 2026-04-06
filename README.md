@@ -154,6 +154,7 @@ A pre-built dashboard covers all signals:
 - **Profiles**: CPU flamegraph from eBPF Profiler via Pyroscope
 
 <img width="1720" height="1066" alt="image" src="https://github.com/user-attachments/assets/5c0493ad-fd15-448b-993d-3465df73567f" />
+<img width="1703" height="722" alt="image" src="https://github.com/user-attachments/assets/71f6ecb6-351a-49e0-a9b7-f8a5d12d75f8" />
 <img width="1713" height="1092" alt="image" src="https://github.com/user-attachments/assets/5672504f-b5ec-4ea9-9d47-69e150f2518d" />
 
 
