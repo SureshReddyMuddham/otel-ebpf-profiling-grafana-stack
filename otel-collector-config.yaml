@@ -1,0 +1,95 @@
+# OTel Collector - Grafana Stack Only
+#
+# Traces/Metrics/Logs: Apps (OTLP) → Collector → Grafana LGTM
+# Container Metrics: docker_stats receiver → Collector → Prometheus
+# CPU Profiles: eBPF Profiler (OTLP) → Collector → Pyroscope
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Docker container metrics (CPU, memory, network, disk)
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 10s
+    timeout: 10s
+    api_version: "1.43"
+    metrics:
+      container.cpu.usage.total:
+        enabled: true
+      container.cpu.percent:
+        enabled: true
+      container.memory.usage:
+        enabled: true
+      container.memory.percent:
+        enabled: true
+      container.network.io.usage.rx_bytes:
+        enabled: true
+      container.network.io.usage.tx_bytes:
+        enabled: true
+      container.blockio.io_service_bytes_recursive:
+        enabled: true
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: docker-local
+        action: upsert
+
+exporters:
+  otlphttp/lgtm:
+    endpoint: http://grafana-lgtm:4318
+    tls:
+      insecure: true
+
+  otlphttp/loki:
+    endpoint: http://grafana-lgtm:3100/otlp
+    tls:
+      insecure: true
+
+  otlp/pyroscope:
+    endpoint: pyroscope:4040
+    tls:
+      insecure: true
+
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: "0.0.0.0"
+                port: 8888
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [otlphttp/lgtm, debug]
+    metrics:
+      receivers: [otlp, docker_stats]
+      processors: [batch, resource]
+      exporters: [otlphttp/lgtm, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [otlphttp/loki, debug]
+    profiles:
+      receivers: [otlp]
+      processors: []
+      exporters: [otlp/pyroscope, debug]

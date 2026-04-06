@@ -1,0 +1,14 @@
+# Pyroscope configuration for OTel eBPF Profiler integration
+# Ref: https://grafana.com/docs/pyroscope/latest/configure-client/opentelemetry/ebpf-profiler/
+#
+# Maps process.executable.name → service_name so Pyroscope shows
+# meaningful names (e.g., "node", "grafana", "java") instead of "unknown_service"
+#
+# In Kubernetes, use k8sattributes processor on the collector to set
+# service.name from pod metadata for per-app service names.
+
+limits:
+  ingestion_relabeling_rules:
+    - action: labelmap
+      regex: ^process\.executable\.name$
+      replacement: service_name

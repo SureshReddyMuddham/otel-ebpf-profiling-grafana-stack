@@ -1,0 +1,118 @@
+# OTel eBPF Profiling POC - Grafana Stack
+#
+# ALL 4 signals via OpenTelemetry only (no vendor SDKs):
+#   Traces/Metrics/Logs: App (OTel SDK) → OTel Collector → Grafana LGTM
+#   Profiles: OTel eBPF Profiler → OTel Collector → Pyroscope
+#
+# Ref: https://grafana.com/docs/pyroscope/latest/configure-client/opentelemetry/ebpf-profiler/
+#      https://opentelemetry.io/blog/2026/profiles-alpha/
+
+services:
+  # ---- Node.js Orders API ----
+  orders-api:
+    build: ./app
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - OTEL_SERVICE_NAME=orders-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - NODE_OPTIONS=--require ./src/instrumentation.js
+    depends_on:
+      - otel-collector
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---- Payment Service ----
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "3002:3001"
+    environment:
+      - PORT=3001
+      - OTEL_SERVICE_NAME=payment-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+    depends_on:
+      - otel-collector
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---- OpenTelemetry Collector (ALL 4 signals) ----
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otelcol-contrib/config.yaml", "--feature-gates=service.profilesSupport"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    user: "0:0"
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+    depends_on:
+      - grafana-lgtm
+      - pyroscope
+
+  # ---- OTel eBPF Profiler (CPU profiles - zero instrumentation) ----
+  ebpf-profiler:
+    image: otel/opentelemetry-collector-ebpf-profiler:latest
+    command:
+      - --config=/etc/ebpf-profiler-config.yaml
+      - --feature-gates=service.profilesSupport
+    privileged: true
+    pid: "host"
+    volumes:
+      - ./ebpf-profiler-config.yaml:/etc/ebpf-profiler-config.yaml:ro
+      - /sys/kernel/debug:/sys/kernel/debug:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /proc:/proc:ro
+    depends_on:
+      - otel-collector
+    restart: on-failure
+
+  # ---- Pyroscope (Profiling Backend) ----
+  pyroscope:
+    image: grafana/pyroscope:main-aa6937b
+    command:
+      - -config.file=/etc/pyroscope.yaml
+      - -self-profiling.disable-push=true
+    ports:
+      - "4040:4040"
+    volumes:
+      - pyroscope-data:/data
+      - ./pyroscope-config.yaml:/etc/pyroscope.yaml:ro
+
+  # ---- Grafana LGTM (Tempo + Prometheus + Loki + Grafana) ----
+  grafana-lgtm:
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "3001:3000"
+      - "9090:9090"
+    volumes:
+      - grafana-data:/data/grafana
+      - loki-data:/data/loki
+      - tempo-data:/data/tempo
+      - prometheus-data:/data/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:3000/api/health > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  grafana-data:
+  loki-data:
+  tempo-data:
+  prometheus-data:
+  pyroscope-data:

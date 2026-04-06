@@ -1,0 +1,25 @@
+# OpenTelemetry eBPF Profiler configuration
+# Sends CPU profiles via OTLP to the main OTel Collector → Pyroscope
+
+receivers:
+  profiling:
+    samples_per_second: 97
+
+exporters:
+  otlp_grpc/collector:
+    endpoint: otel-collector:4317
+    tls:
+      insecure: true
+
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    logs:
+      level: info
+
+  pipelines:
+    profiles:
+      receivers: [profiling]
+      exporters: [otlp_grpc/collector, debug]
